@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Teleprompter</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --text: #f5f0e8;
+      --accent: #e8c84a;
+      --muted: #3a3a3a;
+      --panel: #141414;
+      --border: #222;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Mono', monospace;
+      height: 100dvh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── HEADER ── */
+    #header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    #header h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.25rem;
+      letter-spacing: 0.02em;
+      color: var(--accent);
+    }
+
+    #header h1 span { color: var(--text); }
+
+    .icon-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text);
+      width: 38px; height: 38px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      font-size: 1.1rem;
+    }
+    .icon-btn:active { background: var(--muted); }
+
+    /* ── EDITOR PANEL ── */
+    #editor-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #textarea-wrap {
+      flex: 1;
+      padding: 16px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #script {
+      flex: 1;
+      width: 100%;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.1rem;
+      line-height: 1.7;
+      padding: 16px;
+      resize: none;
+      outline: none;
+      transition: border-color .2s;
+    }
+    #script:focus { border-color: var(--accent); }
+    #script::placeholder { color: #444; font-family: 'Space Mono', monospace; font-size: 0.85rem; }
+
+    /* ── CONTROLS ── */
+    #controls {
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      padding: 14px 18px;
+      flex-shrink: 0;
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .control-row:last-child { margin-bottom: 0; }
+
+    .ctrl-label {
+      font-size: 0.65rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #666;
+      width: 52px;
+      flex-shrink: 0;
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      flex: 1;
+      height: 4px;
+      background: var(--muted);
+      border-radius: 2px;
+      outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(232,200,74,.4);
+    }
+
+    .val-badge {
+      font-size: 0.7rem;
+      color: var(--accent);
+      width: 36px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    #start-btn {
+      width: 100%;
+      padding: 14px;
+      background: var(--accent);
+      color: #0a0a0a;
+      border: none;
+      border-radius: 10px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: transform .1s, box-shadow .2s;
+      margin-top: 4px;
+    }
+    #start-btn:active { transform: scale(0.98); }
+
+    /* ── PROMPTER VIEW ── */
+    #prompter-view {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      display: none;
+      flex-direction: column;
+      z-index: 100;
+    }
+    #prompter-view.active { display: flex; }
+
+    /* Mirror toggle */
+    #prompter-view.mirrored #scroll-area {
+      transform: scaleX(-1);
+    }
+
+    #scroll-area {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #scroll-content {
+      padding: 60px 28px 80vh;
+      will-change: transform;
+    }
+
+    #scroll-content p {
+      font-family: 'DM Serif Display', serif;
+      font-size: var(--font-size, 2rem);
+      line-height: 1.55;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* Highlight line overlay */
+    #focus-line {
+      position: absolute;
+      top: 38%;
+      left: 0; right: 0;
+      height: calc(var(--font-size, 2rem) * 1.7);
+      background: linear-gradient(
+        to bottom,
+        transparent 0%,
+        rgba(232,200,74,0.06) 30%,
+        rgba(232,200,74,0.06) 70%,
+        transparent 100%
+      );
+      pointer-events: none;
+      border-top: 1px solid rgba(232,200,74,0.15);
+      border-bottom: 1px solid rgba(232,200,74,0.15);
+    }
+
+    /* Top & bottom fade */
+    #scroll-area::before,
+    #scroll-area::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0;
+      height: 120px;
+      z-index: 2;
+      pointer-events: none;
+    }
+    #scroll-area::before {
+      top: 0;
+      background: linear-gradient(to bottom, var(--bg) 0%, transparent 100%);
+    }
+    #scroll-area::after {
+      bottom: 0;
+      background: linear-gradient(to top, var(--bg) 0%, transparent 100%);
+    }
+
+    /* Prompter controls bar */
+    #prompter-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: rgba(10,10,10,0.95);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      gap: 10px;
+    }
+
+    .p-btn {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.8rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      gap: 6px;
+      transition: background .15s, border-color .15s;
+      white-space: nowrap;
+    }
+    .p-btn:active { background: var(--muted); }
+    .p-btn.active, #play-btn.playing {
+      background: var(--accent);
+      color: #0a0a0a;
+      border-color: var(--accent);
+    }
+
+    #play-btn {
+      flex: 1;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+
+    #progress-bar-wrap {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--muted);
+      z-index: 20;
+    }
+    #progress-bar {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width .2s linear;
+    }
+
+    /* Touch scroll hint */
+    #tap-hint {
+      position: absolute;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.65rem;
+      color: #444;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      pointer-events: none;
+      opacity: 1;
+      transition: opacity 1s;
+      z-index: 5;
+    }
+    #tap-hint.hidden { opacity: 0; }
+
+    /* Word count */
+    #word-count {
+      font-size: 0.65rem;
+      color: #555;
+      text-align: right;
+      padding: 4px 18px 0;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── EDITOR ── -->
+<div id="editor-panel">
+  <div id="header">
+    <h1>Tele<span>prompter</span></h1>
+    <button class="icon-btn" id="clear-btn" title="Borrar texto">✕</button>
+  </div>
+
+  <div id="textarea-wrap">
+    <textarea id="script" placeholder="Escribe o pega tu guión aquí…
+
+Tip: usa párrafos cortos para facilitar la lectura durante la grabación."></textarea>
+    <div id="word-count">0 palabras</div>
+  </div>
+
+  <div id="controls">
+    <div class="control-row">
+      <span class="ctrl-label">Velocidad</span>
+      <input type="range" id="speed" min="0.2" max="6" step="0.1" value="1.5">
+      <span class="val-badge" id="speed-val">1.5</span>
+    </div>
+    <div class="control-row">
+      <span class="ctrl-label">Tamaño</span>
+      <input type="range" id="font-size" min="16" max="60" step="2" value="28">
+      <span class="val-badge" id="size-val">28</span>
+    </div>
+    <button id="start-btn">▶ &nbsp;Iniciar Teleprompter</button>
+  </div>
+</div>
+
+<!-- ── PROMPTER ── -->
+<div id="prompter-view">
+  <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+
+  <div id="scroll-area">
+    <div id="focus-line"></div>
+    <div id="scroll-content">
+      <p id="display-text"></p>
+    </div>
+    <div id="tap-hint">toca para pausar</div>
+  </div>
+
+  <div id="prompter-bar">
+    <button class="p-btn" id="mirror-btn" title="Espejo">⇆</button>
+    <button class="p-btn" id="play-btn">⏸ Pausar</button>
+    <button class="p-btn" id="stop-btn" title="Salir">✕</button>
+  </div>
+</div>
+
+<script>
+  // ── STATE ──
+  let animId = null;
+  let playing = false;
+  let posY = 0;
+  let mirrored = false;
+  let totalHeight = 0;
+  let hintTimer = null;
+
+  // ── ELEMENTS ──
+  const scriptEl   = document.getElementById('script');
+  const speedEl    = document.getElementById('speed');
+  const fontSizeEl = document.getElementById('font-size');
+  const speedVal   = document.getElementById('speed-val');
+  const sizeVal    = document.getElementById('size-val');
+  const startBtn   = document.getElementById('start-btn');
+  const clearBtn   = document.getElementById('clear-btn');
+  const wordCount  = document.getElementById('word-count');
+
+  const prompterView = document.getElementById('prompter-view');
+  const scrollArea   = document.getElementById('scroll-area');
+  const scrollContent= document.getElementById('scroll-content');
+  const displayText  = document.getElementById('display-text');
+  const focusLine    = document.getElementById('focus-line');
+  const progressBar  = document.getElementById('progress-bar');
+  const playBtn      = document.getElementById('play-btn');
+  const stopBtn      = document.getElementById('stop-btn');
+  const mirrorBtn    = document.getElementById('mirror-btn');
+  const tapHint      = document.getElementById('tap-hint');
+
+  // ── UTILS ──
+  function countWords(txt) {
+    return txt.trim() ? txt.trim().split(/\s+/).length : 0;
+  }
+
+  scriptEl.addEventListener('input', () => {
+    wordCount.textContent = countWords(scriptEl.value) + ' palabras';
+  });
+
+  speedEl.addEventListener('input', () => {
+    speedVal.textContent = parseFloat(speedEl.value).toFixed(1);
+  });
+
+  fontSizeEl.addEventListener('input', () => {
+    sizeVal.textContent = fontSizeEl.value;
+  });
+
+  clearBtn.addEventListener('click', () => {
+    if (confirm('¿Borrar el guión?')) {
+      scriptEl.value = '';
+      wordCount.textContent = '0 palabras';
+    }
+  });
+
+  // ── FONT SIZE → CSS VAR ──
+  function applyFontSize() {
+    const fs = fontSizeEl.value + 'px';
+    document.documentElement.style.setProperty('--font-size', fs);
+    const lineH = parseInt(fontSizeEl.value) * 1.7;
+    focusLine.style.height = lineH + 'px';
+  }
+
+  // ── SCROLL ANIMATION ──
+  let lastTs = null;
+
+  function animate(ts) {
+    if (!playing) return;
+    if (lastTs === null) lastTs = ts;
+    const dt = ts - lastTs;
+    lastTs = ts;
+
+    const speed = parseFloat(speedEl.value);
+    posY += speed * (dt / 16.67); // px/frame normalizado
+
+    const maxScroll = totalHeight - scrollArea.clientHeight;
+    if (posY >= maxScroll) {
+      posY = maxScroll;
+      pausePrompter();
+      progressBar.style.width = '100%';
+      return;
+    }
+
+    scrollArea.scrollTop = posY;
+    const pct = Math.min(100, (posY / maxScroll) * 100);
+    progressBar.style.width = pct + '%';
+
+    animId = requestAnimationFrame(animate);
+  }
+
+  function startAnimation() {
+    lastTs = null;
+    animId = requestAnimationFrame(animate);
+  }
+
+  function pausePrompter() {
+    playing = false;
+    cancelAnimationFrame(animId);
+    playBtn.textContent = '▶ Continuar';
+    playBtn.classList.remove('playing');
+  }
+
+  function resumePrompter() {
+    playing = true;
+    playBtn.textContent = '⏸ Pausar';
+    playBtn.classList.add('playing');
+    startAnimation();
+  }
+
+  // ── START ──
+  startBtn.addEventListener('click', () => {
+    const txt = scriptEl.value.trim();
+    if (!txt) { alert('Escribe tu guión primero.'); return; }
+
+    // Populate
+    displayText.textContent = txt;
+    applyFontSize();
+
+    // Reset position
+    posY = 0;
+    scrollArea.scrollTop = 0;
+    progressBar.style.width = '0%';
+
+    // Show prompter
+    prompterView.classList.add('active');
+    document.body.style.overflow = 'hidden';
+
+    // Lock screen orientation (best-effort)
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('portrait').catch(() => {});
+    }
+
+    // Measure total scrollable height after render
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        totalHeight = scrollContent.scrollHeight;
+        playing = true;
+        playBtn.textContent = '⏸ Pausar';
+        playBtn.classList.add('playing');
+        startAnimation();
+
+        // Show hint then hide
+        tapHint.classList.remove('hidden');
+        clearTimeout(hintTimer);
+        hintTimer = setTimeout(() => tapHint.classList.add('hidden'), 3000);
+      });
+    });
+  });
+
+  // ── PLAY/PAUSE ──
+  playBtn.addEventListener('click', togglePlay);
+  scrollArea.addEventListener('click', togglePlay);
+
+  function togglePlay() {
+    if (playing) pausePrompter();
+    else resumePrompter();
+  }
+
+  // ── STOP ──
+  stopBtn.addEventListener('click', () => {
+    pausePrompter();
+    prompterView.classList.remove('active');
+    document.body.style.overflow = '';
+    if (screen.orientation && screen.orientation.unlock) {
+      screen.orientation.unlock();
+    }
+  });
+
+  // ── MIRROR ──
+  mirrorBtn.addEventListener('click', () => {
+    mirrored = !mirrored;
+    prompterView.classList.toggle('mirrored', mirrored);
+    mirrorBtn.classList.toggle('active', mirrored);
+  });
+
+  // ── MANUAL SCROLL (touch drag) ──
+  let touchStartY = null;
+  let touchStartScrollTop = null;
+  let isTouchScrolling = false;
+
+  scrollArea.addEventListener('touchstart', e => {
+    touchStartY = e.touches[0].clientY;
+    touchStartScrollTop = scrollArea.scrollTop;
+    isTouchScrolling = false;
+  }, { passive: true });
+
+  scrollArea.addEventListener('touchmove', e => {
+    if (touchStartY === null) return;
+    const dy = touchStartY - e.touches[0].clientY;
+    if (Math.abs(dy) > 5) isTouchScrolling = true;
+    if (isTouchScrolling) {
+      pausePrompter();
+      posY = touchStartScrollTop + dy;
+      posY = Math.max(0, Math.min(posY, totalHeight - scrollArea.clientHeight));
+      scrollArea.scrollTop = posY;
+      const pct = (posY / (totalHeight - scrollArea.clientHeight)) * 100;
+      progressBar.style.width = Math.min(100, pct) + '%';
+    }
+  }, { passive: true });
+
+  scrollArea.addEventListener('touchend', () => {
+    touchStartY = null;
+    isTouchScrolling = false;
+  });
+
+  // ── KEEP AWAKE (Wake Lock API) ──
+  let wakeLock = null;
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+      }
+    } catch (e) {}
+  }
+  async function releaseWakeLock() {
+    if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+  }
+
+  prompterView.addEventListener('transitionend', () => {});
+  // Request wake lock when prompter opens
+  const observer = new MutationObserver(() => {
+    if (prompterView.classList.contains('active')) requestWakeLock();
+    else releaseWakeLock();
+  });
+  observer.observe(prompterView, { attributes: true, attributeFilter: ['class'] });
+
+  // ── FONT SIZE GESTURES (pinch zoom) ──
+  let initDist = null;
+  let initSize = null;
+
+  scrollArea.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      initDist = Math.hypot(
+        e.touches[1].clientX - e.touches[0].clientX,
+        e.touches[1].clientY - e.touches[0].clientY
+      );
+      initSize = parseInt(fontSizeEl.value);
+    }
+  }, { passive: true });
+
+  scrollArea.addEventListener('touchmove', e => {
+    if (e.touches.length === 2 && initDist !== null) {
+      const dist = Math.hypot(
+        e.touches[1].clientX - e.touches[0].clientX,
+        e.touches[1].clientY - e.touches[0].clientY
+      );
+      const ratio = dist / initDist;
+      let newSize = Math.round(initSize * ratio);
+      newSize = Math.max(16, Math.min(60, newSize));
+      fontSizeEl.value = newSize;
+      sizeVal.textContent = newSize;
+      applyFontSize();
+      totalHeight = scrollContent.scrollHeight;
+    }
+  }, { passive: true });
+
+  scrollArea.addEventListener('touchend', () => {
+    if (initDist !== null) { initDist = null; }
+  });
+</script>
+</body>
+</html>
